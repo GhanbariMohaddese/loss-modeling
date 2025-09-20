@@ -2,7 +2,7 @@ folder = r'E:\loss\Utils\all wells'  # folder where you extracted the CSV files
 # Define the path to save the model
 model_save_path = folder
 # Save generated figures into a folder
-output_dir = model_save_path
+output_dir = folder
 
 import previs
 import sys
@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import numpy as np
 import os
-
 from sklearn.model_selection import train_test_split
 from previs import preprocessing
 from typing import Iterator
@@ -34,6 +33,10 @@ np.random.seed(seed_value)
 random.seed(seed_value)
 tf.random.set_seed(seed_value)
 
+"""# ** 0. Load Data**
+
+"""
+#region ##########################Load Data###############################################################
 import os
 def load_data(file_names, folder):
     dataframes = {}
@@ -64,13 +67,15 @@ dataframes = load_data(file_names, folder)
 # display the keys of the dictionary to see the dataframe names
 print(dataframes.keys())
 print(dataframes['jr_07_loss'])
+#endregion ##########################Load Data###############################################################
 
 
+"""# ** 1. Data preprocessing**
 
+"""
+#region ##########################Data preprocessing###############################################################
+"""** Drop unwanted columns**
 
-"""# **Data preprocessing**
-
-**0. Drop unwanted columns**
 """
 
 columns_to_drop = [
@@ -97,12 +102,11 @@ for df_name, df in dataframes.items():
     # Update the dataframe in the dictionary
     dataframes[df_name] = df
 
-
 # Optional: Display the columns of one dataframe to verify
 print("\nColumns in jr_07_loss after dropping:")
 print(dataframes['jr_07_loss'].columns)
 
-"""**1. handle missing values**
+"""** handle missing values**
 
 
 """
@@ -143,9 +147,12 @@ print(unique_formation_labels)
 # Remove variables no longer needed
 del unique_category_labels
 del unique_formation_labels
+#endregion ##########################Data preprocessing###############################################################
 
-"""**2. remove during failre rows from Category column**"""
+"""**2. remove during failre rows from Category column**
 
+"""
+#region ##########################remove during failure rows###############################################################
 # remove during failure rows
 filtered_dataframes = {}
 
@@ -160,13 +167,41 @@ for df_name, df in filtered_dataframes.items():
     else:
         print("'Category' column not found.")
     print("-" * 30)
+#endregion ##########################remove during failure rows###############################################################
 
-"""**3. Encoding Non-numeric Columns**
-
-
-
+"""** 3. Earrly prediction (label shifting)**
 
 """
+#region 2 ##################################  Earrly prediction (label shifting) ####################################
+shifted_dataframes = {}
+
+for df_name, df in filtered_dataframes.items():
+    print(f"Applying label shifting to {df_name}...")
+    initial_rows = len(df)
+    shifted_label, shifted_time = dp.shifted_labels(df.copy()) # Use a copy to avoid modifying the original df in place
+    mask = ~np.isnat(shifted_time)
+
+    # Apply the mask to the original dataframe and the shifted results
+    df_shifted = df[mask].copy()
+    shifted_label = shifted_label[mask]
+
+    df_shifted['Category_shifted'] = shifted_label
+
+    print(f'Dataframe {df_name}: Initial Rows Count: {initial_rows}, Rows Count after shifting and masking: {len(df_shifted)}')
+    shifted_dataframes[df_name] = df_shifted
+
+# Remove variables no longer needed after shifting
+del filtered_dataframes # This was already done in a separate cell, but including here for completeness of the section
+del shifted_label
+del shifted_time
+del mask
+del df_shifted
+#endregion #########################################  END Earrly prediction #########################################
+
+"""** 4. Encoding Non-numeric Columns**
+
+"""
+#region #########################################  Encoding Non-numeric Columns #########################################
 
 class MultiColumnCustomLabelEncoder:
     def __init__(self):
@@ -257,8 +292,8 @@ formation_map = {
 
 encoder = MultiColumnCustomLabelEncoder()
 
-for df_name, df in filtered_dataframes.items():
-    df['Category_encoded'] = encoder.fit_transform(df, 'Category', category_map)
+for df_name, df in shifted_dataframes.items():
+    df['Category_encoded'] = encoder.fit_transform(df, 'Category_shifted', category_map)
     if 'Formation' in df.columns:
         df['Formation_encoded'] = encoder.fit_transform(df, 'Formation', formation_map)
 
@@ -267,12 +302,12 @@ del category_map
 del formation_map
 
 # Check if encoding is done properly
-for df_name, df in filtered_dataframes.items():
+for df_name, df in shifted_dataframes.items():
     print(f"Checking encoding for dataframe: {df_name}")
     # Display relevant columns for the first few rows
     cols_to_display = []
-    if 'Category' in df.columns and 'Category_encoded' in df.columns:
-        cols_to_display.extend(['Category', 'Category_encoded'])
+    if 'Category_shifted' in df.columns and 'Category_encoded' in df.columns:
+        cols_to_display.extend(['Category_shifted', 'Category_encoded'])
     if 'Formation' in df.columns and 'Formation_encoded' in df.columns:
         cols_to_display.extend(['Formation', 'Formation_encoded'])
 
@@ -282,43 +317,18 @@ for df_name, df in filtered_dataframes.items():
         print("Relevant encoded columns not found in this dataframe.")
     print("-" * 30)
 
-"""**4. Earrly Prediction: Label Shift**"""
-
-#region 2 ##################################  Earrly prediction (label shifting) ####################################
-shifted_dataframes = {}
-
-for df_name, df in filtered_dataframes.items():
-    print(f"Applying label shifting to {df_name}...")
-    initial_rows = len(df)
-    shifted_label, shifted_time = dp.shifted_labels(df.copy()) # Use a copy to avoid modifying the original df in place
-    mask = ~np.isnat(shifted_time)
-
-    # Apply the mask to the original dataframe and the shifted results
-    df_shifted = df[mask].copy()
-    shifted_label = shifted_label[mask]
-
-    df_shifted['Category_shifted'] = shifted_label
-
-    print(f'Dataframe {df_name}: Initial Rows Count: {initial_rows}, Rows Count after shifting and masking: {len(df_shifted)}')
-    shifted_dataframes[df_name] = df_shifted
-
-# Remove variables no longer needed after shifting
-del filtered_dataframes # This was already done in a separate cell, but including here for completeness of the section
-del shifted_label
-del shifted_time
-del mask
-del df_shifted
-
-#endregion #########################################  END Earrly prediction #########################################
-
 # show the five top rows of each data frame
 for df_name, df in shifted_dataframes.items():
     print(f"\nFirst 5 rows of {df_name}:")
     print(df.head())
 
-"""**5. Segment Dataframes**"""
+#endregion #########################################  Encoding Non-numeric Columns #########################################
 
-#region 3#########################################  Segment #########################################
+
+"""** 5. Segment Dataframes**
+
+"""
+#region #########################################  Segment #########################################
 # Create a dictionary to store segmented dataframes for each original dataframe
 all_segmented_dataframes = {}
 
@@ -335,8 +345,9 @@ for df_name, df in shifted_dataframes.items():
     print(f'Total Row after segmentation for {df_name}: {total_rows_in_segments}-----------------------------------------------------')
 #endregion #########################################  END Segment #########################################
 
-"""**6. Batching**"""
+"""** 6. Batching**
 
+"""
 #region 4#########################################  Batching #########################################
 all_batches = {}
 
@@ -359,8 +370,9 @@ del batches
 del c
 #endregion #########################################  END Batching #########################################
 
-"""**7. Spilit (Train, Test, Validation)**"""
+"""**7. Spilit (Train, Test, Validation)**
 
+"""
 #region ######################################### Spilit (Train, Test, Validation)##############################################################
 # 1. Add 'Well Name' to each batch and flatten into a list
 all_batches_combined = []
@@ -369,27 +381,6 @@ for well_name, batches in all_batches.items():
     for batch in batches:
         batch = batch.assign(**{'Well Name': well_label})
         all_batches_combined.append(batch)
-
-# 2. Extract batch labels for stratification
-batch_labels = []
-for batch in all_batches_combined:
-    # Get unique Category_shifted values in the batch
-    unique_labels = batch['Category_shifted'].unique()
-    if len(unique_labels) == 1:
-        batch_label = unique_labels[0]
-    else:
-        # Optionally decide how to handle mixed-label batches
-        batch_label = unique_labels[0]  # or use majority label
-    batch_labels.append(batch_label)
-
-batch_labels = pd.Series(batch_labels)
-
-# 3. Map string labels to integer classes for sklearn
-label_str_to_int = {label: idx for idx, label in enumerate(batch_labels.unique())}
-batch_labels_int = batch_labels.map(label_str_to_int)
-
-# 4. Check count per class
-print("Batch label counts (int):\n", batch_labels_int.value_counts())
 
 # 5. Now use dp.split_batches on the list of filtered batches
 splited_batches_filtered = dp.split_batches(all_batches_combined, normal_label='normal')
@@ -400,8 +391,9 @@ test_batches = splited_batches_filtered['test']
 
 #endregion ######################################### Spilit (Train, Test, Validation)##############################################################
 
-"""**8. Scaling**"""
+"""**8. Scaling**
 
+"""
 #region ######################################### Scaling #########################################
 # List the specific columns you want to scale
 # Exclude the encoded columns from the list of columns to scale
@@ -446,8 +438,10 @@ print("\nScaled test data head:")
 print(combined_data_test_scaled.head())
 #endregion #########################################  END Scaling #########################################
 
-"""**Encode Well name column**"""
+"""**9. Encode Well name column**
 
+"""
+# region ###########################Encode Well name column#######################################3
 # Encode the 'Well Name' column in the combined dataframes
 # First, get the unique well names from the combined training data to create the mapping
 well_names = combined_data_train_scaled['Well Name'].unique()
@@ -479,12 +473,17 @@ print(combined_data_train_scaled[['Well Name', 'Well_Name_encoded']].head())
 print(combined_data_validation_scaled[['Well Name', 'Well_Name_encoded']].head())
 print(combined_data_test_scaled[['Well Name', 'Well_Name_encoded']].head())
 
+#endregion ########################################## Encode Well name column ##################################3
+
+"""** 10. Reshape**
+
+"""
+# region ###############################Reshap for 1DCNN##########################################################3
 # Remove variables no longer needed after encoding
 del well_names
 del well_name_map
 del splited_batches_filtered
 del all_batches
-
 # Drop non-numeric columns except 'TIME', 'Category_encoded', 'Formation_encoded', and 'Well_Name_encoded' from the scaled dataframes
 columns_to_drop_after_scaling = ['Category_shifted', 'Well Name', 'Formation', 'Category']
 
@@ -626,9 +625,14 @@ print(f"\nNumber of classes: {num_classes}")
 del X_train_balanced
 del y_train_balanced
 del time_train_balanced
+# endregion ###############################Reshap for 1DCNN##########################################################3
 
+"""** 11. Build and TRain Model**
+
+"""
 #region ######################################### Build and TRain Model ###################################
 #  Build and train 1D CNN
+from tensorflow.keras.layers import MaxPooling1D, Dropout, BatchNormalization
 time_steps = X_train.shape[1]  # 60 (sequence length)
 num_features = X_train.shape[2]  # 8 (features per timestep)
 # Use the calculated num_classes from the previous cell
@@ -636,10 +640,18 @@ num_features = X_train.shape[2]  # 8 (features per timestep)
 
 model = Sequential([
     Conv1D(filters=64, kernel_size=3, padding='same', activation='relu', input_shape=(time_steps, num_features)),
+    BatchNormalization(),          # Normalize to stabilize learning
+    MaxPooling1D(pool_size=2),      # Downsample by factor 2
     Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'),
+    BatchNormalization(),
+    MaxPooling1D(pool_size=2),
     Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'),
-    Flatten(), # Add Flatten layer to reduce the output to 1D
-    Dense(num_classes, activation='softmax') # Add a Dense layer for classification
+    BatchNormalization(),
+    Flatten(),  # Flatten for Dense layer
+    Dropout(0.4), # Dropout to prevent overfitting
+    Dense(64, activation='relu'), # Intermediate Dense layer for feature processing
+    Dropout(0.3),
+    Dense(num_classes, activation='softmax') # Classification output
 ])
 
 model.compile(
@@ -650,7 +662,7 @@ model.compile(
 model.summary()
 
 # Callbacks
-early_stopping = EarlyStopping(monitor='val_loss', patience=12, restore_best_weights=True)
+early_stopping = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
 
 # Ensure target labels are int32 as required by sparse_categorical_crossentropy
 y_train = y_train.astype('int32')
@@ -658,7 +670,7 @@ y_val = y_val.astype('int32')
 
 history = model.fit(
     X_train, y_train,
-    epochs=100,
+    epochs=200,
     batch_size=32,
     validation_data=(X_val, y_val),
     callbacks=[early_stopping]
@@ -666,12 +678,14 @@ history = model.fit(
 
 # Remove variables no longer needed after training
 del early_stopping
-#endregion ######################################### Build and TRain Model ###################################
-
 # Save the model
 model.save(os.path.join(model_save_path, "1D_CNN_Model.keras"))
 print(f"Model saved successfully to {model_save_path}")
+#endregion ######################################### Build and TRain Model ###################################
 
+"""** 12. Post Processing**
+
+"""
 #region ######################################### Evaluation ###################################
 
 # # Evaluate the model on the test set
@@ -864,8 +878,6 @@ def plot_category_vs_depth_per_well(combined_df, predicted_classes, encoder, wel
 # Example Usage for specific wells
 # plot_category_vs_depth_per_well(combined_data_test_scaled, test_pred_classes, encoder, wells_to_plot=['JR_07', 'SPH_09'])
 #endregion ###################################plot methods#############################################
-
-
 #region ###################################plot + save results#############################################
 # Save accuracy and loss plot
 import os
@@ -934,9 +946,8 @@ with open(evaluation_results_path, 'w') as f:
 
 print(f"Evaluation results saved to '{output_dir}' folder.")
 #endregion ###################################plot + save results#############################################
+#region ###########################Save the data######################################
 # Save the data used for figures and evaluations
-import os
-import numpy as np
 import joblib
 
 # Ensure the output directory exists
@@ -959,5 +970,5 @@ print(f"Validation evaluation data saved to: {val_data_path}")
 # Save the test data
 np.savez(test_data_path, X_test=X_test, y_test=y_test, time_test=time_test, test_pred_classes=test_pred_classes)
 print(f"Test evaluation data saved to: {test_data_path}")
-
+#endregion ###########################Save the data######################################
 
